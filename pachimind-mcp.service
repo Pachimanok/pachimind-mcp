@@ -1,0 +1,27 @@
+[Unit]
+Description=PachiMind MCP (OAuth + memoria + reuniones + TODO)
+After=network.target pachimind-api.service
+Wants=pachimind-api.service
+
+[Service]
+Type=simple
+User=pachimind
+Group=pachimind
+WorkingDirectory=/srv/pachimind/mcp
+EnvironmentFile=/srv/pachimind/.env
+Environment=MCP_PUBLIC_URL=https://pachimind.rail.ar
+Environment=MCP_DB_PATH=/srv/pachimind/mcp/state/oauth.sqlite3
+Environment=MCP_API_URL=http://127.0.0.1:8000
+Environment=MCP_PORT=8001
+ExecStart=/srv/pachimind/mcp/.venv/bin/python server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/pachimind/mcp/state
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
