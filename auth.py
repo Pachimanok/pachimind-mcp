@@ -5,7 +5,8 @@ from urllib.parse import urlparse
 from mcp.server.auth.provider import AuthorizationCode, AccessToken, RefreshToken, AuthorizationParams, RegistrationError, AuthorizeError, TokenError
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-SCOPES=['pachimind:read','pachimind:write']
+READ_SCOPES=['pachimind:read']
+SCOPES=[*READ_SCOPES,'pachimind:write']
 def hashed(value):return hashlib.sha256(value.encode()).hexdigest()
 
 class Provider:
@@ -39,11 +40,15 @@ class Provider:
         self.save('client',client_info.client_id,client_info.model_dump(mode='json'))
     async def authorize(self,client,params):
         if params.resource not in (None,self.resource):raise AuthorizeError('invalid_request','Recurso incorrecto')
-        if not set(params.scopes or SCOPES)<=set(SCOPES):raise AuthorizeError('invalid_scope')
+        # Registered capabilities are not grants. An omitted scope requests
+        # read only; write still needs a requested scope and explicit consent.
+        scopes=params.scopes if params.scopes is not None else READ_SCOPES
+        if not set(scopes)<=set(SCOPES):raise AuthorizeError('invalid_scope')
+        params=params.model_copy(update={'scopes':list(scopes)})
         pending=secrets.token_urlsafe(32)
         self.save('pending',hashed(pending),{'client_id':client.client_id,'params':params.model_dump(mode='json')},time.time()+600)
         return self.issuer+'/mcp-login?request='+pending
-    def approve(self,pending,csrf,cookie,allow_write=True):
+    def approve(self,pending,csrf,cookie,allow_write=False):
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             record=self.get('pending',hashed(pending),db)
@@ -51,7 +56,7 @@ class Provider:
             if not cookie:raise ValueError('No se recibió la cookie de autorización. Abrí nuevamente el enlace en el mismo navegador, con cookies habilitadas.')
             if not csrf or not secrets.compare_digest(record.get('csrf',''),hashed(csrf)) or not secrets.compare_digest(csrf,cookie):raise ValueError('El formulario ya no coincide con esta sesión. Recargá la página de autorización e intentá nuevamente.')
             self.pop('pending',hashed(pending),db)
-            p=AuthorizationParams.model_validate(record['params']);scopes=p.scopes or SCOPES
+            p=AuthorizationParams.model_validate(record['params']);scopes=p.scopes if p.scopes is not None else READ_SCOPES
             if not allow_write:scopes=[s for s in scopes if s!='pachimind:write']
             code=secrets.token_urlsafe(32)
             obj=AuthorizationCode(code=code,client_id=record['client_id'],scopes=scopes,expires_at=time.time()+120,code_challenge=p.code_challenge,redirect_uri=p.redirect_uri,redirect_uri_provided_explicitly=p.redirect_uri_provided_explicitly,resource=self.resource,subject='pablo')

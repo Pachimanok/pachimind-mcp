@@ -1,6 +1,7 @@
 import os,tempfile,unittest,json,re,hashlib,base64,secrets,asyncio
 from unittest.mock import patch,AsyncMock
 from urllib.parse import urlparse,parse_qs,urlencode
+from urllib.request import parse_http_list,parse_keqv_list
 from pathlib import Path
 os.environ.update(MCP_PUBLIC_URL='http://127.0.0.1:8001',MCP_DEVELOPMENT='1',MCP_DB_PATH=tempfile.mktemp(),PM_API_KEY='test-personal',API_KEYS='{"reader":"ai_context"}',FRONTEND_PASSWORD='test-password')
 from starlette.testclient import TestClient
@@ -16,25 +17,165 @@ class MCPTests(unittest.TestCase):
   self.c=TestClient(server.create_app(),base_url=server.ISSUER);self.c.__enter__()
  def tearDown(self):
   self.c.__exit__(None,None,None);self.old.path=self.oldpath;self.tmp.cleanup()
- def register(self):
-  r=self.c.post('/register',json={'client_name':'Test client','redirect_uris':['http://127.0.0.1:9000/callback'],'token_endpoint_auth_method':'none','grant_types':['authorization_code','refresh_token'],'response_types':['code'],'scope':' '.join(SCOPES)})
+ def register(self,redirect_uri='http://127.0.0.1:9000/callback'):
+  r=self.c.post('/register',json={'client_name':'Test client','redirect_uris':[redirect_uri],'token_endpoint_auth_method':'none','grant_types':['authorization_code','refresh_token'],'response_types':['code'],'scope':' '.join(SCOPES)})
   self.assertEqual(r.status_code,201,r.text);return r.json()['client_id']
- def begin(self,client=None):
-  client=client or self.register();verifier=secrets.token_urlsafe(48);challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-  r=self.c.get('/authorize',params={'client_id':client,'redirect_uri':'http://127.0.0.1:9000/callback','response_type':'code','scope':' '.join(SCOPES),'state':'state-123','code_challenge':challenge,'code_challenge_method':'S256','resource':server.ISSUER+'/mcp'},follow_redirects=False)
+ def begin(self,client=None,scopes=SCOPES,redirect_uri='http://127.0.0.1:9000/callback'):
+  client=client or self.register(redirect_uri);verifier=secrets.token_urlsafe(48);challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
+  params={'client_id':client,'redirect_uri':redirect_uri,'response_type':'code','state':'state-123','code_challenge':challenge,'code_challenge_method':'S256','resource':server.ISSUER+'/mcp'}
+  if scopes is not None:params['scope']=' '.join(scopes)
+  r=self.c.get('/authorize',params=params,follow_redirects=False)
   self.assertIn(r.status_code,[302,303,307]);r=self.c.get(r.headers['location']);self.assertEqual(r.status_code,200)
   form={k:re.search('name="'+k+'" value="([^"]+)"',r.text)[1] for k in ['request','csrf']};form.update(password='test-password',write='yes')
   return client,verifier,form
- def login(self,write=True):
-  client,verifier,form=self.begin()
+ def login(self,write=True,client=None,scopes=SCOPES,redirect_uri='http://127.0.0.1:9000/callback'):
+  client,verifier,form=self.begin(client,scopes,redirect_uri)
   if not write:form.pop('write')
   r=self.c.post('/mcp-login',data=form,follow_redirects=False);self.assertEqual(r.status_code,303,r.text)
   query=parse_qs(urlparse(r.headers['location']).query);self.assertEqual(query['state'],['state-123']);code=query['code'][0]
-  data={'grant_type':'authorization_code','code':code,'client_id':client,'redirect_uri':'http://127.0.0.1:9000/callback','code_verifier':verifier,'resource':server.ISSUER+'/mcp'}
+  data={'grant_type':'authorization_code','code':code,'client_id':client,'redirect_uri':redirect_uri,'code_verifier':verifier,'resource':server.ISSUER+'/mcp'}
   r=self.c.post('/token',data=data);self.assertEqual(r.status_code,200,r.text);return client,r.json(),data
  def rpc(self,token,method,params=None):
   h={'Accept':'application/json, text/event-stream','Authorization':'Bearer '+token}
   return self.c.post('/mcp',headers=h,json={'jsonrpc':'2.0','id':1,'method':method,'params':params or {}})
+ def capture(self,token):
+  return self.rpc(token,'tools/call',{'name':'capture_meeting','arguments':{'project_id':'p','title':'Reunión ficticia','fecha':'2026-10-03','content':'Transcripción ficticia','source':'Prueba'}})
+ def challenge(self,response):
+  self.assertEqual(response.status_code,200)
+  result=response.json()['result'];self.assertTrue(result['isError'])
+  self.assertNotIn('structuredContent',result)
+  values=result['_meta']['mcp/www_authenticate'];self.assertEqual(len(values),1)
+  scheme,params=values[0].split(' ',1);self.assertEqual(scheme,'Bearer')
+  parsed=parse_keqv_list(parse_http_list(params))
+  self.assertEqual(parsed['error'],'insufficient_scope')
+  self.assertEqual(parsed['scope'].split(),SCOPES)
+  self.assertEqual(parsed['resource_metadata'],server.ISSUER+'/.well-known/oauth-protected-resource/mcp')
+  return parsed
+ def test_scope_discovery_and_tool_security_schemes(self):
+  initial=self.c.post('/mcp');self.assertEqual(initial.status_code,401)
+  challenge=parse_keqv_list(parse_http_list(initial.headers['www-authenticate'].split(' ',1)[1]))
+  self.assertEqual(challenge['scope'],'pachimind:read')
+  resource=self.c.get(challenge['resource_metadata']).json()
+  self.assertEqual(resource['resource'],server.ISSUER+'/mcp')
+  self.assertEqual(resource['authorization_servers'],[server.ISSUER+'/'])
+  self.assertEqual(resource['scopes_supported'],SCOPES)
+  self.assertEqual(self.c.get('/.well-known/oauth-authorization-server').json()['scopes_supported'],SCOPES)
+  preflight=self.c.options('/.well-known/oauth-protected-resource/mcp',headers={'Origin':'https://chatgpt.com','Access-Control-Request-Method':'GET'})
+  self.assertEqual(preflight.status_code,200);self.assertEqual(preflight.headers['access-control-allow-origin'],'*')
+  _,tokens,_=self.login(write=False,scopes=['pachimind:read'])
+  tools=self.rpc(tokens['access_token'],'tools/list').json()['result']['tools'];self.assertEqual(len(tools),11)
+  writes={'capture_meeting','propose_actions','review_proposal','create_task','update_task'}
+  for item in tools:
+   with self.subTest(tool=item['name']):
+    expected=[{'type':'oauth2','scopes':SCOPES if item['name'] in writes else ['pachimind:read']}]
+    self.assertEqual(item['_meta']['securitySchemes'],expected)
+    self.assertEqual(item['securitySchemes'],expected)
+ def test_read_scope_still_reads_permitted_notes(self):
+  _,tokens,_=self.login(write=False,scopes=['pachimind:read'])
+  note={'id':'p','title':'Proyecto ficticio','path':'05 Proyectos/p.md','metadata':{'ia_permiso':'allow','ia_indexar':True},'content':'Contenido ficticio'}
+  with patch.object(server,'api',new_callable=AsyncMock,return_value=note) as api:
+   r=self.rpc(tokens['access_token'],'tools/call',{'name':'read_note','arguments':{'note_id':'p'}})
+   self.assertEqual(r.status_code,200);self.assertFalse(r.json()['result'].get('isError'))
+   self.assertEqual(json.loads(r.json()['result']['content'][0]['text'])['content'],note['content'])
+   api.assert_awaited_once_with('/notes/p')
+ def test_all_writes_challenge_before_any_upstream_request(self):
+  _,tokens,_=self.login(write=False,scopes=['pachimind:read'])
+  calls={
+   'capture_meeting':{'project_id':'p','title':'Prueba','fecha':'2026-10-03','content':'Ficticio','source':'Prueba'},
+   'propose_actions':{'project_id':'p','meeting_id':'m','items':[{'tipo':'accion','title':'Prueba','detalle':'Ficticio','evidencia':'Ficticio'}]},
+   'review_proposal':{'project_id':'p','meeting_id':'m','proposal_id':'a','action':'approve'},
+   'create_task':{'title':'Prueba'},
+   'update_task':{'task_id':'a','revision':'old','changes':{'estado':'completado'}},
+  }
+  with patch.object(server,'api',new_callable=AsyncMock) as api:
+   for name,args in calls.items():
+    with self.subTest(tool=name):self.challenge(self.rpc(tokens['access_token'],'tools/call',{'name':name,'arguments':args}))
+   api.assert_not_called()
+ def test_chatgpt_step_up_requires_explicit_consent(self):
+  callback='https://chatgpt.com/connector/oauth/test'
+  client,readonly,_=self.login(write=False,scopes=['pachimind:read'],redirect_uri=callback)
+  with patch.object(server,'api',new_callable=AsyncMock) as api:
+   scopes=self.challenge(self.capture(readonly['access_token']))['scope'].split();api.assert_not_called()
+  _,_,form=self.begin(client,scopes,callback)
+  page=self.c.get('/mcp-login',params={'request':form['request']}).text
+  checkbox=re.search(r'<input type="checkbox" name="write"[^>]*>',page)[0]
+  self.assertNotIn('checked',checkbox)
+  _,denied,_=self.login(write=False,client=client,scopes=scopes,redirect_uri=callback)
+  self.assertEqual(denied['scope'],'pachimind:read')
+  with patch.object(server,'api',new_callable=AsyncMock) as api:
+   self.challenge(self.capture(denied['access_token']));api.assert_not_called()
+  _,accepted,_=self.login(write=True,client=client,scopes=scopes,redirect_uri=callback)
+  self.assertEqual(accepted['scope'].split(),SCOPES)
+  async def fake(path,method='GET',body=None,read=False):
+   if method=='GET':return {'id':'p','path':'05 Proyectos/p.md','metadata':{'ia_permiso':'allow','ia_indexar':True}}
+   return {'id':'meeting-test',**body}
+  with patch.object(server,'api',side_effect=fake) as api:
+   result=self.capture(accepted['access_token']).json()['result'];self.assertFalse(result.get('isError'))
+   self.assertEqual(json.loads(result['content'][0]['text'])['id'],'meeting-test')
+   self.assertEqual(api.await_count,2);self.assertEqual(api.call_args.args[:2],('/projects/p/meetings','POST'))
+   self.challenge(self.capture(readonly['access_token']))
+   self.assertEqual(api.await_count,2) # Old token is not silently upgraded.
+ def test_no_scope_or_forged_checkbox_does_not_grant_write(self):
+  for scopes in (None,['pachimind:read']):
+   with self.subTest(scopes=scopes):
+    _,_,form=self.begin(scopes=scopes)
+    page=self.c.get('/mcp-login',params={'request':form['request']}).text
+    self.assertNotIn('type="checkbox"',page)
+    # Even a forged write=yes cannot add a scope that was not requested.
+    _,tokens,_=self.login(write=True,scopes=scopes)
+    self.assertEqual(tokens['scope'],'pachimind:read')
+    with patch.object(server,'api',new_callable=AsyncMock) as api:
+     self.challenge(self.capture(tokens['access_token']));api.assert_not_called()
+ def test_refresh_cannot_upgrade_read_scope(self):
+  client,tokens,_=self.login(write=False,scopes=['pachimind:read'])
+  refresh={'grant_type':'refresh_token','refresh_token':tokens['refresh_token'],'client_id':client,'resource':server.ISSUER+'/mcp','scope':' '.join(SCOPES)}
+  r=self.c.post('/token',data=refresh);self.assertEqual(r.status_code,400);self.assertEqual(r.json()['error'],'invalid_scope')
+  refresh.pop('scope');r=self.c.post('/token',data=refresh);self.assertEqual(r.status_code,200)
+  self.assertEqual(r.json()['scope'],'pachimind:read')
+  with patch.object(server,'api',new_callable=AsyncMock) as api:
+   self.challenge(self.capture(r.json()['access_token']));api.assert_not_called()
+ def test_restricted_client_needs_new_registration_for_step_up(self):
+  r=self.c.post('/register',json={'redirect_uris':['http://127.0.0.1:9000/callback'],'token_endpoint_auth_method':'none','grant_types':['authorization_code','refresh_token'],'response_types':['code'],'scope':'pachimind:read'})
+  self.assertEqual(r.status_code,201);client=r.json()['client_id']
+  params={'client_id':client,'redirect_uri':'http://127.0.0.1:9000/callback','response_type':'code','scope':' '.join(SCOPES),'state':'test','code_challenge':'test','code_challenge_method':'S256','resource':server.ISSUER+'/mcp'}
+  r=self.c.get('/authorize',params=params,follow_redirects=False)
+  self.assertEqual(r.status_code,302);self.assertEqual(parse_qs(urlparse(r.headers['location']).query)['error'],['invalid_scope'])
+  self.assertEqual(asyncio.run(server.provider.get_client(client)).scope,'pachimind:read')
+  # Re-register with advertised capabilities and ask for consent; do not edit
+  # an existing client's registration or grant write during refresh.
+  _,tokens,_=self.login(write=True);self.assertEqual(tokens['scope'].split(),SCOPES)
+ def test_write_only_token_cannot_bypass_read_requirement(self):
+  _,tokens,_=self.login(scopes=['pachimind:write'])
+  self.assertEqual(tokens['scope'],'pachimind:write')
+  with patch.object(server,'api',new_callable=AsyncMock) as api:
+   r=self.capture(tokens['access_token']);self.assertEqual(r.status_code,403)
+   challenge=parse_keqv_list(parse_http_list(r.headers['www-authenticate'].split(' ',1)[1]))
+   self.assertEqual(challenge['error'],'insufficient_scope');self.assertEqual(challenge['scope'],'pachimind:read')
+   api.assert_not_called()
+ def test_authorized_capture_preserves_note_restrictions(self):
+  _,tokens,_=self.login()
+  base={'id':'p','path':'05 Proyectos/p.md','metadata':{'ia_permiso':'allow','ia_indexar':True},'content':'DO NOT LEAK'}
+  notes=[dict(base,path=path) for path in ['10 Sensible/p.md','99 Adjuntos/p.md','00 Sistema/p.md','.oculto/p.md','_privado_personal/p.md']]
+  notes += [dict(base,metadata=dict(base['metadata'],**changes)) for changes in [{'ia_permiso':'deny'},{'ia_indexar':False},{'sensibilidad':'privado'},{'sensibilidad':'sensible'},{'sensibilidad':'secreto'}]]
+  for note in notes:
+   with self.subTest(note=note['path'],metadata=note['metadata']),patch.object(server,'api',new_callable=AsyncMock,return_value=note) as api:
+    r=self.capture(tokens['access_token']);self.assertTrue(r.json()['result']['isError'])
+    self.assertNotIn('mcp/www_authenticate',r.text);self.assertNotIn('DO NOT LEAK',r.text)
+    api.assert_awaited_once_with('/notes/p') # GET only: no meeting POST.
+ def test_invalid_expired_revoked_or_wrong_resource_cannot_write(self):
+  client,tokens,_=self.login()
+  with patch.object(server,'api',new_callable=AsyncMock) as api:
+   self.assertEqual(self.capture('invalid-test-token').status_code,401)
+   with server.provider.db() as db:db.execute("UPDATE records SET expires=0 WHERE kind='access'")
+   self.assertEqual(self.capture(tokens['access_token']).status_code,401)
+   _,revoked,_=self.login(client=client)
+   self.assertEqual(self.c.post('/revoke',data={'client_id':client,'token':revoked['refresh_token']}).status_code,200)
+   self.assertEqual(self.capture(revoked['access_token']).status_code,401)
+   _,wrong,_=self.login(client=client)
+   record=server.provider.get('access',server.hashed(wrong['access_token']));record['resource']='https://other.example/mcp'
+   server.provider.save('access',server.hashed(wrong['access_token']),record,record['expires_at'])
+   self.assertEqual(self.capture(wrong['access_token']).status_code,401)
+   api.assert_not_called()
  def test_discovery_oauth_replay_refresh_revoke(self):
   r=self.c.post('/mcp');self.assertEqual(r.status_code,401);self.assertIn('oauth-protected-resource',r.headers['www-authenticate'])
   self.assertEqual(self.c.get('/.well-known/oauth-protected-resource/mcp').json()['resource'],server.ISSUER+'/mcp')
