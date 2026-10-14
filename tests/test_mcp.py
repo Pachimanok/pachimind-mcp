@@ -63,8 +63,8 @@ class MCPTests(unittest.TestCase):
   preflight=self.c.options('/.well-known/oauth-protected-resource/mcp',headers={'Origin':'https://chatgpt.com','Access-Control-Request-Method':'GET'})
   self.assertEqual(preflight.status_code,200);self.assertEqual(preflight.headers['access-control-allow-origin'],'*')
   _,tokens,_=self.login(write=False,scopes=['pachimind:read'])
-  tools=self.rpc(tokens['access_token'],'tools/list').json()['result']['tools'];self.assertEqual(len(tools),11)
-  writes={'capture_meeting','propose_actions','review_proposal','create_task','update_task'}
+  tools=self.rpc(tokens['access_token'],'tools/list').json()['result']['tools'];self.assertEqual(len(tools),21)
+  writes={'capture_meeting','propose_actions','review_proposal','create_task','update_task','create_person_draft','propose_person_update','apply_person_update','propose_note_links','apply_note_links','create_knowledge_draft'}
   for item in tools:
    with self.subTest(tool=item['name']):
     expected=[{'type':'oauth2','scopes':SCOPES if item['name'] in writes else ['pachimind:read']}]
@@ -181,7 +181,7 @@ class MCPTests(unittest.TestCase):
   self.assertEqual(self.c.get('/.well-known/oauth-protected-resource/mcp').json()['resource'],server.ISSUER+'/mcp')
   self.assertIn('S256',self.c.get('/.well-known/oauth-authorization-server').json()['code_challenge_methods_supported'])
   client,tokens,data=self.login();self.assertEqual(self.c.post('/token',data=data).status_code,400)
-  result=self.rpc(tokens['access_token'],'tools/list');self.assertEqual(result.status_code,200,result.text);tools=result.json()['result']['tools'];self.assertEqual(len(tools),11)
+  result=self.rpc(tokens['access_token'],'tools/list');self.assertEqual(result.status_code,200,result.text);tools=result.json()['result']['tools'];self.assertEqual(len(tools),21)
   readonly=next(t for t in tools if t['name']=='read_note');self.assertTrue(readonly['annotations']['readOnlyHint'])
   refresh={'grant_type':'refresh_token','refresh_token':tokens['refresh_token'],'client_id':client,'resource':server.ISSUER+'/mcp'}
   r=self.c.post('/token',data=refresh);self.assertEqual(r.status_code,200,r.text);new=r.json();self.assertEqual(self.rpc(tokens['access_token'],'tools/list').status_code,401)

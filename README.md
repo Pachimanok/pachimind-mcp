@@ -27,3 +27,9 @@ Pruebas: `python -m unittest discover -s tests -v`. El recorrido MCP completo se
 Para revocar todas las conexiones, detener el servicio, respaldar state/oauth.sqlite3, eliminar solamente las filas kind access/refresh/code/pending, y reiniciar; preservar los registros de clientes. No compartir ni versionar la base de estado.
 
 La conexión de ChatGPT requiere instalar/configurar el endpoint con OAuth y que el usuario complete el consentimiento. Publicar el endpoint no conecta automáticamente una cuenta ni da acceso retroactivo a todos sus chats o proyectos.
+
+## Personas y conocimiento (rama de trabajo)
+
+Herramientas nuevas y contratos: [docs/people-tools.md](docs/people-tools.md).
+Requieren la API coordinada de Personas; no cambian OAuth ni las conexiones existentes.
+Las pruebas de integración se ejecutan sólo contra la API de demo sintética.
