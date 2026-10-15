@@ -187,3 +187,26 @@ Procedimiento conjunto, diagnóstico, migración/reversión y validación del fr
 `docs/people-v1.md` en pachimind-api. Desplegar sólo con aprobación específica y con
 la API nueva antes que MCP; incluir people_types.py. No eliminar/recrear OAuth
 SQLite ni reemplazar .env. No probar escrituras con el vault real por defecto.
+
+
+## Redes, cumpleaños y contexto personal
+
+PersonChanges admite `redes_sociales` (linkedin, instagram, facebook, x, web, otra:
+URLs HTTPS sin credenciales/query/fragmentos), `cumpleanos` ({dia, mes, anio opcional})
+y `datos_generales` (lista de {texto, categoria, fecha?, vigente_hasta?, estado}).
+Categorías: interes, preferencia, familia, evento, salud, otro. Estados: vigente,
+pendiente, finalizado. Fechas exactas YYYY-MM-DD; nunca deducir qué jueves ni el año
+natal. Mantener evidencia literal por campo, revisión y autorización explícita.
+
+Ejemplo de changes: `{"cumpleanos":{"dia":14,"mes":5},"datos_generales":[{"texto":"Es hincha de Belgrano","categoria":"interes"}]}`.
+Las listas se reemplazan completas: releer y conservar entradas existentes antes de
+proponer una modificación; no mezclar automáticamente con un conflicto de revisión.
+
+get_person devuelve `personal_context` con estado_actual y usar_como_hecho_actual.
+Eventos pasados, vencidos, finalizados o pendientes no deben presentarse como hechos
+actuales al preparar reuniones. No hay agenda ni recordatorios automáticos.
+
+Salud es de edición manual: no se acepta en propuestas. Toda ficha que contenga un
+dato categoria=salud queda fuera de MCP/contexto IA y lectura pública, incluso con
+la clave personal interna del asistente. Las protecciones previas siguen vigentes.
+No clasificar información sanitaria como otro/interes para eludir esa protección.

@@ -240,7 +240,7 @@ async def search_people(query: str,page: int=1,per_page: int=20,ambito: Literal[
 
 @tool()
 async def get_person(person_id: str) -> dict:
-    """Read a permitted profile, evidence, incoming/outgoing relationships and current revision. Pending proposals are suggestions, never confirmed facts."""
+    """Read a permitted profile, evidence, incoming/outgoing relationships and current revision. Pending proposals are suggestions, never confirmed facts. For conversation/meeting preparation use personal_context: do not present expired, past-date, pending or completed events as current. Birth year is optional; never infer it. Profiles containing health data are human-only."""
     require();return await api('/people/'+e(person_id)+'/profile',read=True)
 
 @tool(write=True)

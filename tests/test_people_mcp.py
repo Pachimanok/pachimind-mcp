@@ -22,6 +22,21 @@ class Helpers(unittest.TestCase):
         return json.loads(result['content'][0]['text'])
 
 class PersonToolTests(Helpers):
+    def test_personal_fields_forward_without_invented_year(self):
+        _, tokens, _ = self.login()
+        changes = {'cumpleanos': {'dia': 14, 'mes': 5}, 'redes_sociales': {'instagram': 'https://www.instagram.com/persona_demo'},
+                   'datos_generales': [{'texto': 'Hincha de Belgrano', 'categoria': 'interes'}]}
+        args = {'person_id': 'p', 'revision': 'a'*64, 'changes': changes,
+                'evidence': [{'field': 'datos_generales', 'source_id': 's', 'quote': 'Hincha de Belgrano'}]}
+        with patch.object(server, 'api', new_callable=AsyncMock, return_value={'state': 'pending'}) as api:
+            self.data(self.call(tokens['access_token'], 'propose_person_update', args))
+            body = api.call_args.args[2]
+            self.assertEqual(body['fields'], changes)
+            api.reset_mock()
+            args['changes'] = {'cumpleanos': {'dia': 30, 'mes': 2}}
+            self.assertTrue(self.call(tokens['access_token'], 'propose_person_update', args)['isError'])
+            api.assert_not_called()
+
     def test_new_writes_require_oauth_write_before_any_api_call(self):
         _, tokens, _ = self.login(write=False, scopes=['pachimind:read'])
         examples = {
