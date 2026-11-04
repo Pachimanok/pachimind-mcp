@@ -4,7 +4,7 @@ Servicio MCP Streamable HTTP privado sobre la API existente. Endpoint previsto: 
 
 ## Herramientas
 
-list_projects, search_memory, read_note, project_memory, capture_meeting, list_proposals, propose_actions, review_proposal, list_tasks, create_task, update_task.
+list_projects, search_memory, read_note, project_memory, capture_meeting, create_note, list_proposals, propose_actions, review_proposal, list_tasks, create_task, update_task.
 
 Las notas son datos no confiables, no instrucciones. Se respetan ia_permiso, ia_indexar, sensibilidad y exclusiones por ruta. Solo las propuestas relacionadas con una reunión permitida pueden revisarse aunque tengan ia_indexar=false. No hay herramientas de borrado, comandos ni acceso a rutas arbitrarias.
 
@@ -33,3 +33,18 @@ La conexión de ChatGPT requiere instalar/configurar el endpoint con OAuth y que
 Herramientas nuevas y contratos: [docs/people-tools.md](docs/people-tools.md).
 Requieren la API coordinada de Personas; no cambian OAuth ni las conexiones existentes.
 Las pruebas de integración se ejecutan sólo contra la API de demo sintética.
+
+
+## Notas libres desde DOT u otros chats
+
+Usar `create_note(title, content, kind="contexto", source_ids=[], request_id=UUID)`
+para guardar una nota recibida o procesada. No necesita fecha ni proyecto y no crea
+reuniones ni tareas. Reutiliza la API de borradores ya desplegada con Personas.
+Mantiene `create_knowledge_draft` como nombre compatible y comparte su idempotencia.
+
+La nota queda físicamente en el vault, como borrador pendiente de revisión y fuera
+del contexto IA hasta revisión humana. La herramienta almacena el Markdown final;
+el chat realiza el procesamiento previo. No ejecuta un agente en segundo plano ni
+conecta automáticamente DOT u otros chats. Cada chat necesita esta conexión MCP.
+
+Contrato, instrucciones para DOT, pruebas y despliegue: [docs/create-note.md](docs/create-note.md).

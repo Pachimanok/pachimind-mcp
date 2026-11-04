@@ -46,6 +46,7 @@ class PersonToolTests(Helpers):
             'propose_note_links': {'source_id':'p','revision':'0'*64,'links':[{'target_id':'s','target_revision':'0'*64,'relation':'fuente','evidence':{'field':'relation','source_id':'s','quote':'Demo'}}]},
             'apply_note_links': {'proposal_id':str(uuid4()),'revision':'0'*64,'authorized_fields':['relations']},
             'create_knowledge_draft': {'title':'Demo','kind':'contexto','content':'Elaborado'},
+            'create_note': {'title':'Nota libre','content':'Texto procesado de prueba'},
         }
         with patch.object(server, 'api', new_callable=AsyncMock) as api:
             for name, args in examples.items():
@@ -64,7 +65,7 @@ class PersonToolTests(Helpers):
             self.data(self.call(tokens['access_token'],'list_pending_changes',{'note_id':'p'}));self.assertTrue(api.call_args.kwargs['read'])
     def test_stable_creation_ids_and_knowledge_is_not_a_meeting(self):
         _, tokens, _ = self.login()
-        with patch.object(server, 'api', new_callable=AsyncMock, return_value={'id':'demo'}) as api:
+        with patch.object(server, 'api', new_callable=AsyncMock, return_value={'id':'demo','path':'07 Conocimiento/Contexto/demo.md','state':'pending','created':True}) as api:
             for _ in range(2):self.data(self.call(tokens['access_token'],'create_person_draft',{'nombre':'Demo'}))
             self.assertEqual(api.call_args_list[0].args[2],api.call_args_list[1].args[2])
             self.data(self.call(tokens['access_token'],'create_knowledge_draft',{'title':'Sin fecha','kind':'lectura','content':'Resumen elaborado'}))

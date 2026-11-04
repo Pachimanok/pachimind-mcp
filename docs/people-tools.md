@@ -15,6 +15,7 @@ no cambian. La selección de cuenta sigue perteneciendo a la conexión existente
 | apply_person_update | read + write | Una propuesta de persona, campos autorizados y revision |
 | propose_note_links | read + write | IDs verificados, tipos, evidencia y revisiones de origen/destino |
 | apply_note_links | read + write | Una propuesta de relaciones autorizada |
+| create_note | read + write | Notas libres/procesadas; contexto por defecto; idempotencia compartida |
 | create_knowledge_draft | read + write | Contexto/resumen/lectura derivados, sin fecha de reunión |
 
 Ahora tools/list devuelve 21 herramientas (11 anteriores + 10 nuevas). SecuritySchemes
