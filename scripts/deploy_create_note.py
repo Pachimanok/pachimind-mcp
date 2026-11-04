@@ -61,7 +61,7 @@ def main():
         with urlopen(Request(url,headers={'User-Agent':'PachiMind-create-note-deploy'}),timeout=45) as r:data=r.read()
         if hashlib.sha256(data).hexdigest()!=expected:raise RuntimeError('Hash incorrecto: '+name)
         target=stage/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
-    env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1')
+    env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',MCP_API_URL='http://127.0.0.1:1')
     env.pop('PACHIMIND_TEST_API_URL',None)
     # Tests bind only fake credentials, temporary OAuth state and mock API calls.
     with (stage/'tests.log').open('w') as output:
