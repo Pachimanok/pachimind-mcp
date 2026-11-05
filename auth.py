@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from mcp.server.auth.provider import AuthorizationCode, AccessToken, RefreshToken, AuthorizationParams, RegistrationError, AuthorizeError, TokenError
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
+CLAUDE_CALLBACK='https://claude.ai/api/mcp/auth_callback'
 READ_SCOPES=['pachimind:read']
 SCOPES=[*READ_SCOPES,'pachimind:write']
 def hashed(value):return hashlib.sha256(value.encode()).hexdigest()
@@ -34,9 +35,9 @@ class Provider:
         if not self.limit("register",60,3600):raise RegistrationError("invalid_client_metadata","Demasiados registros; reintentar más tarde.")
         for redirect in client_info.redirect_uris:
             u=urlparse(str(redirect));valid=u.scheme=='https' and u.hostname in {'chatgpt.com','chat.openai.com'} and not u.username and not u.fragment and u.port in (None,443)
-            valid=valid or str(redirect)=='http://localhost:8765/callback'
+            valid=valid or str(redirect) in {CLAUDE_CALLBACK,'http://localhost:8765/callback'}
             valid=valid or (self.development and u.scheme=='http' and u.hostname in {'127.0.0.1','localhost'})
-            if not valid:raise RegistrationError('invalid_redirect_uri','Callback no permitido; usar ChatGPT HTTPS o http://localhost:8765/callback para Claude.')
+            if not valid:raise RegistrationError('invalid_redirect_uri','Callback no permitido; usar un callback autorizado de ChatGPT, Claude HTTPS o el callback local registrado.')
         self.save('client',client_info.client_id,client_info.model_dump(mode='json'))
     async def authorize(self,client,params):
         if params.resource not in (None,self.resource):raise AuthorizeError('invalid_request','Recurso incorrecto')

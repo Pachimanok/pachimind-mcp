@@ -14,7 +14,7 @@ Las escrituras requieren pachimind:write. Capturas/propuestas/actividades usan I
 
 OAuth authorization code + PKCE S256, descubrimiento estándar, registro dinámico (DCR), tokens opacos (hash en SQLite), expiración, refresh rotativo y revocación de la familia. El formulario exige la contraseña existente de PachiMind y consentimiento para la conexión. Acceso de solo lectura si se desmarca escritura. Esta implementación es para un único propietario, Pablo; no es un sistema multiusuario.
 
-Callbacks de producción: HTTP exacto http://localhost:8765/callback para Claude y HTTPS en chatgpt.com o chat.openai.com, URI exacta registrada y validada por el SDK. No CIMD en esta versión. Otros clientes requieren habilitar sus callbacks explícitamente. SQLite guarda también los metadatos/secretos OAuth de clientes confidenciales y debe permanecer restringido. El MCP no retorna claves del backend.
+Callbacks de producción: HTTPS exacto https://claude.ai/api/mcp/auth_callback para el conector de Claude; HTTP exacto http://localhost:8765/callback para clientes que usen ese retorno; y HTTPS en chatgpt.com o chat.openai.com según la política existente. El SDK valida la URI exacta registrada. No CIMD en esta versión. Otros clientes requieren habilitar sus callbacks explícitamente. SQLite guarda también los metadatos/secretos OAuth de clientes confidenciales y debe permanecer restringido. El MCP no retorna claves del backend.
 
 Usa PM_API_KEY (personal), API_KEYS (con una clave ai_context) y FRONTEND_PASSWORD del entorno del servidor. No copiar .env ni credenciales a un plugin. MCP_PUBLIC_URL controla issuer; MCP_DB_PATH apunta al estado persistente. MCP_DEVELOPMENT=1 permite callbacks HTTP de localhost solo para pruebas. Nunca habilitarlo en producción.
 
@@ -54,3 +54,5 @@ Contrato, instrucciones para DOT, pruebas y despliegue: [docs/create-note.md](do
 El inicio MCP indica leer la nota de reglas aprobadas con ID estable, usando
 read_note y el scope de lectura existente. No agrega herramientas ni permite que
 una fuente arbitraria active reglas. Ver [docs/shared-rules.md](docs/shared-rules.md).
+
+Conector remoto de Claude: elegir Registrar automáticamente (DCR), no CIMD ni ID/secret propios. Ver [docs/claude-connector.md](docs/claude-connector.md).
