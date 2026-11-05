@@ -48,3 +48,9 @@ el chat realiza el procesamiento previo. No ejecuta un agente en segundo plano n
 conecta automáticamente DOT u otros chats. Cada chat necesita esta conexión MCP.
 
 Contrato, instrucciones para DOT, pruebas y despliegue: [docs/create-note.md](docs/create-note.md).
+
+## Preferencias compartidas
+
+El inicio MCP indica leer la nota de reglas aprobadas con ID estable, usando
+read_note y el scope de lectura existente. No agrega herramientas ni permite que
+una fuente arbitraria active reglas. Ver [docs/shared-rules.md](docs/shared-rules.md).
